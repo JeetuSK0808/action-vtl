@@ -38,12 +38,12 @@ function release(tag: string, id: number, prerelease = false) {
   return {id, tag_name: tag, name: tag, draft: false, prerelease};
 }
 
-function tagContext(tag: string): Context {
+function pushContext(ref: string): Context {
   return {
     action: 'x',
     eventName: 'push',
     sha: 'a8cb3d0eae1f1a064896493f4cf63dafc17bafcf',
-    ref: `refs/tags/${tag}`,
+    ref,
     workflow: 'w',
     actor: 'a',
     job: 'j',
@@ -60,8 +60,16 @@ function tagContext(tag: string): Context {
 }
 
 async function dockerTags(tag: string) {
-  const ctx = tagContext(tag);
+  const ctx = pushContext(`refs/tags/${tag}`);
   const ver = await SemVer('v0.0.1', false, new Map(), 'prerelease', ctx);
+  const info = await GetDockerInfo('org/img', ver, '', ctx, 'fake-token');
+  return info.tags.split(',');
+}
+
+// A main-branch build that isn't a pre-release gets its version from the base version
+async function mainBranchDockerTags(baseVer: string) {
+  const ctx = pushContext('refs/heads/main');
+  const ver = await SemVer(baseVer, false, new Map(), 'prerelease', ctx);
   const info = await GetDockerInfo('org/img', ver, '', ctx, 'fake-token');
   return info.tags.split(',');
 }
@@ -101,4 +109,21 @@ test('releases past the first page are checked too', async () => {
     ...Array.from({length: 29}, (_, i) => release(`v0.9.${29 - i}`, 50 - i)),
   ];
   expect(await dockerTags('v2.0.0')).not.toContain('org/img:latest');
+});
+
+test('a draft release with a higher tag does not block latest', async () => {
+  api.state.releases = [{...release('v1.0.0', 2), draft: true}, release('v0.0.835', 1)];
+  expect(await dockerTags('v0.0.836')).toContain('org/img:latest');
+});
+
+test('a main-branch build of the newest version gets latest', async () => {
+  api.state.releases = [release('v1.3.0', 2), release('v1.2.9', 1)];
+  expect(await mainBranchDockerTags('v1.3.0')).toContain('org/img:latest');
+});
+
+test('re-running an older main-branch build does not take latest', async () => {
+  api.state.releases = [release('v1.4.0', 3), release('v1.3.0', 2), release('v1.2.9', 1)];
+  const tags = await mainBranchDockerTags('v1.3.0');
+  expect(tags).toContain('org/img:1.3.0');
+  expect(tags).not.toContain('org/img:latest');
 });

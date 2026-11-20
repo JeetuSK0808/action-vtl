@@ -100,8 +100,9 @@ export async function GetDockerInfo(
         // Look through all the releases for a newer tag
         let newest = true;
         for (const release of releases) {
-          // Skip pre-releases and releases whose tag is not a SEMVER (compareSemvers would throw)
-          if (release.prerelease || !SEMVER_REGEX.test(release.tag_name)) {
+          // Skip drafts (listed to tokens with push access, never released), pre-releases,
+          // and releases whose tag is not a SEMVER (compareSemvers would throw)
+          if (release.draft || release.prerelease || !SEMVER_REGEX.test(release.tag_name)) {
             continue;
           }
 
